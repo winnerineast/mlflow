@@ -1,22 +1,31 @@
+import sys
+
 from mlflow.entities._mlflow_object import _MLflowObject
 from mlflow.protos.service_pb2 import Param as ProtoParam
 
 
 class Param(_MLflowObject):
     """
-    Param object for python client. Backend stores will hydrate this object in APIs.
+    Parameter object.
     """
 
     def __init__(self, key, value):
+        if "pyspark.ml" in sys.modules:
+            import pyspark.ml.param
+            if isinstance(key, pyspark.ml.param.Param):
+                key = key.name
+                value = str(value)
         self._key = key
         self._value = value
 
     @property
     def key(self):
+        """String key corresponding to the parameter name."""
         return self._key
 
     @property
     def value(self):
+        """String value of the parameter."""
         return self._value
 
     def to_proto(self):
@@ -28,8 +37,3 @@ class Param(_MLflowObject):
     @classmethod
     def from_proto(cls, proto):
         return cls(proto.key, proto.value)
-
-    @classmethod
-    def _properties(cls):
-        # TODO: Hard coding this list of props for now. There has to be a clearer way...
-        return ["key", "value"]

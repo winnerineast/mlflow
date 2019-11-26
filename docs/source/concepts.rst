@@ -14,10 +14,11 @@ require minimal changes to integrate into an existing codebase. At the same time
 take any codebase written in its format and make it reproducible and reusable by multiple data
 scientists. On this page, we describe a typical ML workflow and where MLflow fits in.
 
+
 The Machine Learning Workflow
 -----------------------------
 
-Machine learning requires experimenting with a wide range of datasets, data preparation steps and
+Machine learning requires experimenting with a wide range of datasets, data preparation steps, and
 algorithms to build a model that maximizes some target metric. Once you have built a model, you also
 need to deploy it to a production system, monitor its performance, and continuously retrain it on
 new data and compare with alternative models.
@@ -47,8 +48,8 @@ MLflow Components
 
 MLflow provides three components to help manage the ML workflow:
 
-**MLflow Tracking** is an API and UI for logging parameters, code versions, metrics and output files
-when running your machine learning code to later visualize them. You can use MLflow Tracking in
+**MLflow Tracking** is an API and UI for logging parameters, code versions, metrics, and artifacts
+when running your machine learning code and for later visualizing the results. You can use MLflow Tracking in
 any environment (for example, a standalone script or a notebook) to log results to local files or to a
 server, then compare multiple runs. Teams can also use it to compare results from different users.
 
@@ -57,7 +58,7 @@ is simply a directory with code or a Git repository, and uses a descriptor file 
 convention to specify its dependencies and how to run the code. For example, projects can contain
 a ``conda.yaml`` file for specifying a Python `Conda <https://conda.io/docs/>`_ environment.
 When you use the MLflow Tracking API in a Project, MLflow automatically remembers the project
-version executed (for example, Git commit) and any parameters. You can easily run existing MLflow
+version (for example, Git commit) and any parameters. You can easily run existing MLflow
 Projects from GitHub or your own Git repository, and chain them into multi-step workflows.
 
 **MLflow Models** offer a convention for packaging machine learning models in multiple flavors, and
@@ -67,8 +68,44 @@ TensorFlow model can be loaded as a TensorFlow DAG, or as a Python function to a
 MLflow provides tools to deploy many common model types to diverse platforms: for example, any model
 supporting the "Python function" flavor can be deployed to a Docker-based REST server, to cloud
 platforms such as Azure ML and AWS SageMaker, and as a user-defined function in Apache Spark for
-batch and streaming inference. If you output MLflow Models using the Tracking API, MLflow will also
-automatically remember which Project and run they came from.
+batch and streaming inference. If you output MLflow Models using the Tracking API, MLflow also
+automatically remembers which Project and run they came from.
+
+.. _artifact-locations:
+
+Referencing Artifacts
+---------------------
+
+When you specify the location of an artifact in MLflow APIs, the syntax depends on whether you are invoking the Tracking, Models, or Projects API. 
+For the Tracking API, you specify the artifact location using a (run ID, relative path) tuple. For the Models and Projects APIs, you specify the artifact location in the follow ways:
+
+- ``/Users/me/path/to/local/model``
+- ``relative/path/to/local/model``
+- ``<scheme>/<scheme-dependent-path>``. For example:
+
+  - ``s3://my_bucket/path/to/model``
+  - ``hdfs://<host>:<port>/<path>``
+  - ``runs:/<mlflow_run_id>/run-relative/path/to/model``
+  - ``models:/<model_name>/<model_version>``
+  - ``models:/<model_name>/<stage>``
+
+For example:
+
+.. rubric:: Tracking API
+
+.. code-block:: py
+
+  mlflow.log_artifacts("<mlflow_run_id>", "/path/to/artifact")
+  
+.. rubric:: Models API
+
+.. code-block:: py
+
+  mlflow.pytorch.log_model("runs:/<mlflow_run_id>/run-relative/path/to/model", registered_model_name="mymodel")
+
+.. code-block:: py
+
+  mlflow.pytorch.load_model("models:/mymodel/1")
 
 ..
     TODO: example app and data

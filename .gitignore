@@ -6,7 +6,7 @@ outputs/
 .DS_Store
 
 # Byte-compiled / optimized / DLL files
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 
@@ -45,7 +45,6 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
-.tox/
 .coverage
 .coverage.*
 .cache
@@ -54,7 +53,6 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
-.tox
 
 # Sphinx documentation
 docs/_build/
@@ -80,9 +78,20 @@ venv.bak/
 *.swo
 *.idea
 *.vscode
+*.iml
 
 # mkdocs documentation
 /site
 
 # mypy
 .mypy_cache/
+
+# java targets
+target/
+
+# R notebooks
+.Rproj.user
+example/tutorial/R/*.nb.html
+
+# travis_wait command logs
+travis_wait*.log

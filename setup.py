@@ -1,38 +1,16 @@
-# Databricks CLI
-# Copyright 2017 Databricks, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License"), except
-# that the use of services to which certain application programming
-# interfaces (each, an "API") connect requires that the user first obtain
-# a license for the use of the APIs from Databricks, Inc. ("Databricks"),
-# by creating an account at www.databricks.com and agreeing to either (a)
-# the Community Edition Terms of Service, (b) the Databricks Terms of
-# Service, or (c) another written agreement between Licensee and Databricks
-# for the use of the APIs.
-#
-# You may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import imp
 import os
+import sys
 from setuptools import setup, find_packages
 
 version = imp.load_source(
-    'mlflow.version', os.path.join('mlflow', 'version.py')).version
+    'mlflow.version', os.path.join('mlflow', 'version.py')).VERSION
 
 
 # Get a list of all files in the JS directory to include in our module
 def package_files(directory):
     paths = []
-    for (path, directories, filenames) in os.walk(directory):
+    for (path, _, filenames) in os.walk(directory):
         for filename in filenames:
             paths.append(os.path.join('..', path, filename))
     return paths
@@ -41,34 +19,49 @@ def package_files(directory):
 # Prints out a set of paths (relative to the mlflow/ directory) of files in mlflow/server/js/build
 # to include in the wheel, e.g. "../mlflow/server/js/build/index.html"
 js_files = package_files('mlflow/server/js/build')
+models_container_server_files = package_files("mlflow/models/container")
+alembic_files = ["../mlflow/store/db_migrations/alembic.ini", "../mlflow/temporary_db_migrations_for_pre_1_users/alembic.ini"]
 
 setup(
     name='mlflow',
     version=version,
     packages=find_packages(exclude=['tests', 'tests.*']),
-    package_data={"mlflow": js_files},
+    package_data={"mlflow": js_files + models_container_server_files + alembic_files},
     install_requires=[
-        'awscli',
-        'click>=6.7',
-        'databricks-cli',
+        'alembic',
+        'click>=7.0',
+        'cloudpickle',
+        'databricks-cli>=0.8.7',
         'requests>=2.17.3',
         'six>=1.10.0',
-        'uuid',
-        'gitpython',
+        'waitress; platform_system == "Windows"',
+        'gunicorn; platform_system != "Windows"',
         'Flask',
-        'pygal',
-        'zipstream',
         'numpy',
         'pandas',
-        'scipy',
-        'scikit-learn',
         'python-dateutil',
-        'protobuf',
-        'gitpython',
+        'protobuf>=3.6.0',
+        'gitpython>=2.1.0',
         'pyyaml',
-        'boto3',
         'querystring_parser',
+        'simplejson',
+        'docker>=4.0.0',
+        'entrypoints',
+        'sqlparse',
+        'sqlalchemy',
+        'gorilla',
     ],
+    extras_require={
+        'extras':[
+            "scikit-learn; python_version >= '3.5'",
+            # scikit-learn 0.20 is the last version to support Python 2.x  & Python 3.4.
+            "scikit-learn==0.20; python_version < '3.5'",
+            'boto3>=1.7.12',
+            'mleap>=0.8.1',
+            'azure-storage',
+            'google-cloud-storage',
+        ],
+    },
     entry_points='''
         [console_scripts]
         mlflow=mlflow.cli:cli

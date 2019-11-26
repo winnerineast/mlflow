@@ -1,49 +1,54 @@
 import time
 import unittest
 
-from mlflow.entities.metric import Metric
-from mlflow.entities.param import Param
-from mlflow.entities.run_data import RunData
+from mlflow.entities import Metric, RunData, Param, RunTag
 from tests.helper_functions import random_str, random_int
 
 
 class TestRunData(unittest.TestCase):
-    def _check_metrics(self, metrics_1, metrics_2):
-        self.assertEqual(set([m.key for m in metrics_1]), set([m.key for m in metrics_2]))
-        self.assertEqual(set([m.value for m in metrics_1]), set([m.value for m in metrics_2]))
-        self.assertEqual(set([m.timestamp for m in metrics_1]),
-                         set([m.timestamp for m in metrics_2]))
+    def _check_metrics(self, metric_objs, metrics_dict, expected_metrics):
+        self.assertEqual(set([m.key for m in metric_objs]),
+                         set([m.key for m in expected_metrics]))
+        self.assertEqual(set([m.value for m in metric_objs]),
+                         set([m.value for m in expected_metrics]))
+        self.assertEqual(set([m.timestamp for m in metric_objs]),
+                         set([m.timestamp for m in expected_metrics]))
+        self.assertEqual(set([m.step for m in metric_objs]),
+                         set([m.step for m in expected_metrics]))
+        assert len(metrics_dict) == len(expected_metrics)
+        assert metrics_dict == {m.key: m.value for m in expected_metrics}
 
-    def _check_params(self, params_1, params_2):
-        self.assertEqual(set([p.key for p in params_1]), set([p.key for p in params_2]))
-        self.assertEqual(set([p.value for p in params_1]), set([p.value for p in params_2]))
+    def _check_params(self, params_dict, expected_params):
+        self.assertEqual(params_dict, {p.key: p.value for p in expected_params})
 
-    def _check(self, rd, metrics, params):
-        self._check_metrics(rd.metrics, metrics)
+    def _check_tags(self, tags_dict, expected_tags):
+        self.assertEqual(tags_dict, {t.key: t.value for t in expected_tags})
+
+    def _check(self, rd, metrics, params, tags):
+        self.assertIsInstance(rd, RunData)
+        self._check_metrics(rd._metric_objs, rd.metrics, metrics)
         self._check_params(rd.params, params)
+        self._check_tags(rd.tags, tags)
 
     @staticmethod
     def _create():
-        metrics = [Metric(random_str(10), random_int(), int(time.time() + random_int(-1e4, 1e4)))
-                   for x in range(100)]  # noqa
-        params = [Param(random_str(10), random_str(random_int(10, 35))) for x in range(10)]  # noqa
-        rd = RunData()
-        for p in params:
-            rd.add_param(p)
-        for m in metrics:
-            rd.add_metric(m)
-        return rd, metrics, params
+        metrics = [Metric(key=random_str(10),
+                          value=random_int(0, 1000),
+                          timestamp=int(time.time()) + random_int(-1e4, 1e4),
+                          step=random_int())]
+        params = [Param(random_str(10), random_str(random_int(10, 35))) for _ in range(10)]  # noqa
+        tags = [RunTag(random_str(10), random_str(random_int(10, 35))) for _ in range(10)]  # noqa
+        rd = RunData(metrics=metrics, params=params, tags=tags)
+        return rd, metrics, params, tags
 
     def test_creation_and_hydration(self):
-        rd1, metrics, params = self._create()
-        self._check(rd1, metrics, params)
+        rd1, metrics, params, tags = self._create()
+        self._check(rd1, metrics, params, tags)
 
-        as_dict = {"metrics": metrics, "params": params}
+        as_dict = {"metrics": {m.key: m.value for m in metrics},
+                   "params": {p.key: p.value for p in params},
+                   "tags": {t.key: t.value for t in tags}}
         self.assertEqual(dict(rd1), as_dict)
-
         proto = rd1.to_proto()
         rd2 = RunData.from_proto(proto)
-        self._check(rd2, metrics, params)
-
-        rd3 = RunData.from_dictionary(as_dict)
-        self._check(rd3, metrics, params)
+        self._check(rd2, metrics, params, tags)

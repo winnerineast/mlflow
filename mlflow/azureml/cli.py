@@ -1,132 +1,70 @@
+"""
+CLI for azureml module.
+"""
 from __future__ import print_function
 
-import os
-import shutil
+import json
 
 import click
 
-from mlflow import pyfunc
-
-from mlflow.models import Model
-from mlflow.tracking import _get_model_log_dir
-
-from mlflow.utils.file_utils import TempDir
+import mlflow.azureml
+from mlflow.utils import cli_args, experimental
 
 
 @click.group("azureml")
 def commands():
-    """Serve models on Azure ML."""
+    """
+    Serve models on Azure ML. **These commands require that MLflow be installed with Python 3.**
+
+    To serve a model associated with a run on a tracking server, set the MLFLOW_TRACKING_URI
+    environment variable to the URL of the desired server.
+    """
     pass
 
 
-@commands.command("deploy")
-@click.option("--app-name", "-n", default=None,
-              help="The application name under which should this model be deployed. "
-                   "Translates to service name on Azure ML", required=True)
-@click.option("--model-path", "-m", default=None,
-              help="Path to the model. The path is relative to the run with the given run_id or "
-                   "local filesystem path without run_id.", required=True)
-@click.option("--run_id", "-r", default=None, help="Id of the MLflow run that contains the model.",
-              required=False)
-def deploy(app_name, model_path, run_id):
-    """Deploy MLflow model to Azure ML.
-
-    This command will export MLflow model into Azure ML compatible format and create a service
-    models this model.
-
-    NOTE: This command is to be called from correctly initialized Azure ML environment.
-         At the moment this means it has to be run from console launched from Azure ML Workbench.
-         Caller is reponsible for setting up Azure ML environment and accounts.
-
-    NOTE: Azure ML can not handle any Conda environment. In particular python version seems to be
-          fixed. If the model contains Conda environment and it has been trained outside of Azure
-          ML, the Conda environment might need to be edited to work with Azure ML.
+@commands.command("build-image")
+@cli_args.MODEL_URI
+@click.option("--workspace-name", "-w", required=True,
+              help="The name of the Azure Workspace in which to build the image.")
+@click.option("--subscription-id", "-s", default=None,
+              help=("The subscription id associated with the Azure Workspace in which to build"
+                    " the image"))
+@click.option("--image-name", "-i", default=None,
+              help=("The name to assign the Azure Container Image that is created. If unspecified,"
+                    " a unique image name will be generated."))
+@click.option("--model-name", "-n", default=None,
+              help=("The name to assign the Azure Model that is created. If unspecified,"
+                    " a unique image name will be generated."))
+@cli_args.MLFLOW_HOME
+@click.option("--description", "-d", default=None,
+              help=("A string description to associate with the Azure Container Image and the"
+                    " Azure Model that are created."))
+@click.option("--tags", "-t", default=None,
+              help=("A collection of tags, represented as a JSON-formatted dictionary of string"
+                    " key-value pairs, to associate with the Azure Container Image and the Azure"
+                    " Model that are created. These tags are added to a set of default tags"
+                    " that include the model path, the model run id (if specified), and more."))
+@experimental
+def build_image(model_uri, workspace_name, subscription_id, image_name, model_name,
+                mlflow_home, description, tags):
     """
-    if run_id:
-        model_path = _get_model_log_dir(model_path, run_id)
-    model_path = os.path.abspath(model_path)
-    with TempDir(chdr=True, remove_on_exit=True):
-        exec_str = _export(app_name, model_path, "model")
-        print("executing", '"{}"'.format(exec_str))
-        # Use os.system instead of subprocess due to the fact that currently all azureml commands
-        # have to be called within the same shell (launched from azureml workbench app by the user).
-        # We can change this once there is a python api (or general cli) available.
-        os.system(exec_str)
+    Register an MLflow model with Azure ML and build an Azure ML ContainerImage for deployment.
+    The resulting image can be deployed as a web service to Azure Container Instances (ACI) or
+    Azure Kubernetes Service (AKS).
 
-
-@commands.command("export")
-@click.option("--output", "-o", default=None, help="Output directory.", required=True)
-@click.option("--model-path", "-m", default=None,
-              help="Path to the model. The path is relative to the run with the given run_id or "
-                   "local filesystem path without run_id.", required=True)
-@click.option("--run_id", "-r", default=None, help="Id of the MLflow run that contains the model.",
-              required=False)
-def export(output, model_path, run_id):
-    """Export MLflow model as Azure ML compatible model ready to be deployed.
-
-    Export MLflow model out with everything needed to deploy on Azure ML.
-    Output includes sh script with command to deploy the generated model to Azure ML.
-    The generated model has no dependency on MLflow.
-
-    NOTE: This commnand does not need Azure ML environment to run.
-
-    NOTE: Azure ML can not handle any Conda environment. In particular python version seems to be
-          fixed. If the model contains Conda environment and it has been trained outside of Azure
-          ML, the Conda environment might need to be edited.
+    The resulting Azure ML ContainerImage will contain a webserver that processes model queries.
+    For information about the input data formats accepted by this webserver, see the following
+    documentation: https://www.mlflow.org/docs/latest/models.html#azureml-deployment.
     """
-    output = os.path.abspath(output)
-    if os.path.exists(output):
-        raise Exception("output folder {} already exists".format(output))
-    os.mkdir(output)
-    if run_id:
-        model_path = _get_model_log_dir(model_path, run_id)
-    model_path = os.path.abspath(model_path)
-    curr_dir = os.path.abspath(os.getcwd())
-    os.chdir(output)
-    try:
-        exec_str = _export("$1", model_path, os.path.basename(output))
-        with open("create_service.sh", "w") as f:
-            f.write("\n".join(["#! /bin/sh", "cd {}".format(output), exec_str, ""]))
-    finally:
-        os.chdir(curr_dir)
+    # The Azure ML SDK is only compatible with Python 3. However, this CLI should still be
+    # accessible for inspection rom Python 2. Therefore, we will only import from the SDK
+    # upon command invocation.
+    # pylint: disable=import-error
+    from azureml.core import Workspace
 
-
-def _export(app_name, model_path, dst_model_path):
-    conf = _load_conf(model_path)
-    score_py = "score.py"  # NOTE: azure ml requires the main module to be in the current directory
-    loader_src = pyfunc.get_module_loader_src(model_path, dst_model_path)
-    with open(score_py, "w") as f:
-        f.write(SCORE_SRC.format(loader=loader_src))
-    shutil.copytree(src=model_path, dst=dst_model_path)
-    deps = ""
-    env = "-c {}".format(os.path.join(dst_model_path, conf[pyfunc.ENV])) \
-        if pyfunc.ENV in conf else ""
-    cmd = "az ml service create realtime -n {name} " + \
-          "--model-file {path} -f {score} {conda_env} {deps} -r python "
-    return cmd.format(name=app_name, path=dst_model_path, score=score_py, conda_env=env, deps=deps)
-
-
-def _load_conf(path):
-    path = os.path.abspath(path)
-    model = Model.load(os.path.join(path, "MLmodel"))
-    if pyfunc.FLAVOR_NAME not in model.flavors:
-        raise Exception("Currently only supports pyfunc format.")
-    return model.flavors[pyfunc.FLAVOR_NAME]
-
-
-SCORE_SRC = """
-import pandas as pd
-import json
-
-{loader}
-
-def init():
-    global model
-    model = load_pyfunc()
-
-
-def run(s):    
-    input_df = pd.read_json(s, orient="records")
-    pred = model.predict(input_df)
-    return json.dumps(pred.tolist())
-"""
+    workspace = Workspace.get(name=workspace_name, subscription_id=subscription_id)
+    if tags is not None:
+        tags = json.loads(tags)
+    mlflow.azureml.build_image(
+            model_uri=model_uri, workspace=workspace, image_name=image_name, model_name=model_name,
+            mlflow_home=mlflow_home, description=description, tags=tags, synchronous=True)

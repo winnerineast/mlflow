@@ -1,86 +1,50 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { LineChart, XAxis, Tooltip, CartesianGrid, Line, YAxis, ResponsiveContainer, Legend } from 'recharts';
 import { connect } from 'react-redux';
 import Utils from '../utils/Utils';
-import { getMetricsByKey } from '../reducers/MetricReducer';
-
-const COLORS = [
-  "#993955",
-  "#AE76A6",
-  "#A3C3D9",
-  "#364958",
-  "#FF82A9",
-  "#FFC0BE",
-];
+import './MetricView.css';
+import { Experiment } from '../sdk/MlflowMessages';
+import { getExperiment, getRunTags } from '../reducers/Reducers';
+import BreadcrumbTitle from './BreadcrumbTitle';
+import MetricsPlotPanel from './MetricsPlotPanel';
+import { withRouter } from 'react-router-dom';
 
 class MetricView extends Component {
   static propTypes = {
-    title: PropTypes.string.isRequired,
-    // Object with keys from Metric json and also
-    metrics: PropTypes.arrayOf(Object).isRequired,
+    experiment: PropTypes.instanceOf(Experiment).isRequired,
     runUuids: PropTypes.arrayOf(String).isRequired,
+    runNames: PropTypes.arrayOf(String).isRequired,
+    metricKey: PropTypes.string.isRequired,
+    location: PropTypes.object.isRequired,
   };
 
   render() {
+    const { experiment, runUuids, runNames, metricKey, location } = this.props;
+    const plotMetricKeys = Utils.getPlotMetricKeysFromUrl(location.search);
     return (
-      <div className="MetricView">
-        <h2 className="MetricView-title">{this.props.title}</h2>
-        <ResponsiveContainer width="100%" aspect={1.55}>
-          <LineChart
-            data={Utils.convertTimestampToInt(this.props.metrics)}
-            margin={{ top: 10, right: 10, left: 10, bottom: 10 }}
-          >
-            <XAxis dataKey="index" type="number"/>
-            <Tooltip isAnimationActive={false} labelStyle={{display: "none"}}/>
-            <CartesianGrid strokeDasharray="3 3"/>
-            <Legend verticalAlign="bottom"/>
-            <YAxis/>
-            {this.props.runUuids.map((uuid, idx) => (
-              <Line type="linear"
-                    dataKey={uuid}
-                    isAnimationActive={false}
-                    connectNulls
-                    stroke={COLORS[idx % COLORS.length]}/>
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+      <div className='MetricView'>
+        <div className='header-container'>
+          <BreadcrumbTitle
+            experiment={experiment}
+            runNames={runNames}
+            runUuids={runUuids}
+            title={<span>{plotMetricKeys.length > 1 ? 'Metrics' : plotMetricKeys[0]}</span>}
+          />
+        </div>
+        <MetricsPlotPanel {...{ runUuids, metricKey }} />
       </div>
-    )
+    );
   }
 }
 
 const mapStateToProps = (state, ownProps) => {
-  const { metricKey, runUuids } = ownProps;
-  const metricsByIdxList = [];
-  runUuids.forEach((runUuid) => {
-    const metricsByIdx = {};
-    getMetricsByKey(runUuid, metricKey, state).forEach((metricForRun, idx) =>{
-      metricsByIdx[idx] = metricForRun.value;
-    });
-    metricsByIdxList.push(metricsByIdx);
+  const { experimentId, runUuids } = ownProps;
+  const experiment = experimentId !== null ? getExperiment(experimentId, state) : null;
+  const runNames = runUuids.map((runUuid) => {
+    const tags = getRunTags(runUuid, state);
+    return Utils.getRunDisplayName(tags, runUuid);
   });
-  const mergedMetricsByIdx = Utils.mergeRuns(runUuids, metricsByIdxList);
-
-  const metrics = [];
-  Object.keys(mergedMetricsByIdx).sort().forEach((idx) => {
-    let metric = { index: parseInt(idx, 10) };
-    runUuids.forEach((runUuid) => {
-      metric[runUuid] = mergedMetricsByIdx[idx][runUuid] || null;
-    });
-    metrics.push(metric);
-  });
-  return {
-    metrics,
-    title: Private.getTitle(metricKey, runUuids),
-    runUuids: runUuids,
-  }
+  return { experiment, runNames };
 };
 
-export default connect(mapStateToProps)(MetricView);
-
-class Private {
-  static getTitle(metricKey, runUuids) {
-    return <span>{metricKey}</span>;
-  }
-}
+export default withRouter(connect(mapStateToProps)(MetricView));

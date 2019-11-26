@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import pprint
 
 
 class _MLflowObject(object):
@@ -8,9 +9,12 @@ class _MLflowObject(object):
             yield prop, self.__getattribute__(prop)
 
     @classmethod
-    @abstractmethod
+    def _get_properties_helper(cls):
+        return sorted([p for p in cls.__dict__ if isinstance(getattr(cls, p), property)])
+
+    @classmethod
     def _properties(cls):
-        pass
+        return cls._get_properties_helper()
 
     @classmethod
     @abstractmethod
@@ -19,4 +23,31 @@ class _MLflowObject(object):
 
     @classmethod
     def from_dictionary(cls, the_dict):
-        return cls(**the_dict)
+        filtered_dict = {key: value for key, value in the_dict.items() if key in cls._properties()}
+        return cls(**filtered_dict)
+
+    def __repr__(self):
+        return to_string(self)
+
+
+def to_string(obj):
+    return _MLflowObjectPrinter().to_string(obj)
+
+
+def get_classname(obj):
+    return type(obj).__name__
+
+
+class _MLflowObjectPrinter(object):
+
+    def __init__(self):
+        super(_MLflowObjectPrinter, self).__init__()
+        self.printer = pprint.PrettyPrinter()
+
+    def to_string(self, obj):
+        if isinstance(obj, _MLflowObject):
+            return "<%s: %s>" % (get_classname(obj), self._entity_to_string(obj))
+        return self.printer.pformat(obj)
+
+    def _entity_to_string(self, entity):
+        return ", ".join(["%s=%s" % (key, self.to_string(value)) for key, value in entity])
