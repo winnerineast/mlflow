@@ -25,6 +25,7 @@ import os
 import yaml
 import logging
 import posixpath
+import re
 
 import mlflow
 from mlflow import pyfunc, mleap
@@ -34,6 +35,7 @@ from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE
 from mlflow.tracking.artifact_utils import _download_artifact_from_uri
 from mlflow.utils.environment import _mlflow_conda_env
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
+from mlflow.store.artifact.models_artifact_repo import ModelsArtifactRepository
 from mlflow.utils.file_utils import TempDir
 from mlflow.utils.uri import is_local_uri
 from mlflow.utils.model_utils import _get_flavor_configuration_from_uri
@@ -50,13 +52,21 @@ _logger = logging.getLogger(__name__)
 def get_default_conda_env():
     """
     :return: The default Conda environment for MLflow Models produced by calls to
-             :func:`save_model()` and :func:`log_model()`.
+             :func:`save_model()` and :func:`log_model()`. This Conda environment
+             contains the current version of PySpark that is installed on the caller's
+             system. ``dev`` versions of PySpark are replaced with stable versions in
+             the resulting Conda environment (e.g., if you are running PySpark version
+             ``2.4.5.dev0``, invoking this method produces a Conda environment with a
+             dependency on PySpark version ``2.4.5``).
     """
     import pyspark
+    # Strip the suffix from `dev` versions of PySpark, which are not
+    # available for installation from Anaconda or PyPI
+    pyspark_version = re.sub(r"(\.?)dev.*", "", pyspark.__version__)
 
     return _mlflow_conda_env(
         additional_conda_deps=[
-            "pyspark={}".format(pyspark.__version__),
+            "pyspark={}".format(pyspark_version),
         ],
         additional_pip_deps=None,
         additional_conda_channels=None)
@@ -67,6 +77,8 @@ def log_model(spark_model, artifact_path, conda_env=None, dfs_tmpdir=None,
     """
     Log a Spark MLlib model as an MLflow artifact for the current run. This uses the
     MLlib persistence format and produces an MLflow Model with the Spark flavor.
+
+    Note: If no run is active, it will instantiate a run to obtain a run_id.
 
     :param spark_model: Spark model to be saved - MLFlow can only save descendants of
                         pyspark.ml.Model which implement MLReadable and MLWritable.
@@ -413,6 +425,10 @@ def load_model(model_uri, dfs_tmpdir=None):
     if RunsArtifactRepository.is_runs_uri(model_uri):
         runs_uri = model_uri
         model_uri = RunsArtifactRepository.get_underlying_uri(model_uri)
+        _logger.info("'%s' resolved as '%s'", runs_uri, model_uri)
+    elif ModelsArtifactRepository.is_models_uri(model_uri):
+        runs_uri = model_uri
+        model_uri = ModelsArtifactRepository.get_underlying_uri(model_uri)
         _logger.info("'%s' resolved as '%s'", runs_uri, model_uri)
     flavor_conf = _get_flavor_configuration_from_uri(model_uri, FLAVOR_NAME)
     model_uri = posixpath.join(model_uri, flavor_conf["model_data"])
